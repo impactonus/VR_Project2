@@ -1,0 +1,14 @@
+{
+  "navButtons": [
+    {
+      "text": "Go to Scene 01",
+      "gotoScene": "01",
+      "position": "-1 1.5 -3"
+    },
+    {
+      "text": "Go to Scene 02",
+      "gotoScene": "02",
+      "position": "1 1.5 -3"
+    }
+  ]
+}
