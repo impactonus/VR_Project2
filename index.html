@@ -86,7 +86,14 @@
     clearScene();
 
     // Set sky
-    sceneSky.setAttribute('src', `assets/scenes/${sceneNum}/scene${sceneNum}.jpg`);
+    //sceneSky.setAttribute('src', `assets/scenes/${sceneNum}/scene${sceneNum}.jpg`);
+
+    const img = new Image();
+img.src = `assets/scenes/${sceneNum}/scene${sceneNum}.jpg`;
+img.onload = () => {
+  sceneSky.setAttribute('src', img.src);
+};
+img.onerror = () => console.error("Failed to load sky image");
 
     // Load nav buttons
     const sceneData = await fetch(`assets/scenes/${sceneNum}/scene${sceneNum}.json`).then(r=>r.json());
