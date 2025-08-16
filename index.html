@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>VR Experience</title>
+  <title>Dynamic VR Experience</title>
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
   <style>
     body { margin: 0; overflow: hidden; }
@@ -64,29 +64,22 @@
   let currentAudio = null;
 
   // 1. Load global styles
-  const styles = await fetch('config/styles.json').then(r => r.json());
+  const styles = await fetch('assets/config/styles.json').then(r => r.json());
 
   // 2. Fetch scene list dynamically
-  const scenesManifest = await fetch('scenes/scenes.json').then(r=>r.json());
+  const scenesManifest = await fetch('assets/scenes/scenes.json').then(r=>r.json());
 
-  // 3. Preload scene assets (sky images + scene audios)
+  // 3. Preload scene backgrounds only (audio will load on demand to avoid blocking)
   let assetsToLoad = [];
   scenesManifest.forEach(sceneNum => {
-    assetsToLoad.push(`scenes/${sceneNum}/scene${sceneNum}.jpg`);
-    assetsToLoad.push(`scenes/${sceneNum}/scene${sceneNum}.mp3`);
+    assetsToLoad.push(`assets/scenes/${sceneNum}/scene${sceneNum}.jpg`);
   });
 
   await Promise.all(assetsToLoad.map(src => {
     return new Promise(resolve => {
-      if(src.endsWith('.jpg')){
-        const img = new Image();
-        img.src = src;
-        img.onload = resolve;
-      } else if(src.endsWith('.mp3')){
-        const audio = new Audio();
-        audio.src = src;
-        audio.onloadeddata = resolve;
-      } else resolve();
+      const img = new Image();
+      img.src = src;
+      img.onload = resolve;
     });
   }));
 
@@ -116,7 +109,6 @@
     const { text, gotoScene, position } = navData;
     const style = styles.navButton;
 
-    // Button plane
     const button = document.createElement('a-plane');
     button.setAttribute('width', style.width || 2);
     button.setAttribute('height', style.height || 0.8);
@@ -125,7 +117,6 @@
     button.setAttribute('look-at', '#cameraRig');
     button.setAttribute('class','navButton');
 
-    // Text
     const btnText = document.createElement('a-text');
     btnText.setAttribute('value', text);
     btnText.setAttribute('color', style.color || '#fff');
@@ -133,7 +124,6 @@
     btnText.setAttribute('position','0 0 0.01');
     button.appendChild(btnText);
 
-    // Interaction
     button.addEventListener('click', () => loadScene(gotoScene));
 
     return button;
@@ -144,14 +134,14 @@
     clearScene();
 
     // Set sky
-    sceneSky.setAttribute('src', `scenes/${sceneNum}/scene${sceneNum}.jpg`);
+    sceneSky.setAttribute('src', `assets/scenes/${sceneNum}/scene${sceneNum}.jpg`);
 
     // Play scene audio
-    currentAudio = new Audio(`scenes/${sceneNum}/scene${sceneNum}.mp3`);
+    currentAudio = new Audio(`assets/scenes/${sceneNum}/scene${sceneNum}.mp3`);
     currentAudio.play();
 
     // Load scene metadata
-    const sceneData = await fetch(`scenes/${sceneNum}/scene${sceneNum}.json`).then(r=>r.json());
+    const sceneData = await fetch(`assets/scenes/${sceneNum}/scene${sceneNum}.json`).then(r=>r.json());
 
     // Add multiple nav buttons
     if(sceneData.navButtons && sceneData.navButtons.length > 0){
@@ -161,7 +151,7 @@
       });
     }
 
-    // TODO: dynamically load images, models, videos, buttons
+    // TODO: dynamically load images, models, videos, other buttons
   }
 
 })();
