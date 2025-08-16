@@ -2,157 +2,107 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Dynamic VR Experience</title>
+  <title>VR Scenes Demo</title>
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
   <style>
     body { margin: 0; overflow: hidden; }
-    #loadingScreen {
-      position: absolute;
-      top:0; left:0; right:0; bottom:0;
-      background: black;
-      color: white;
-      display:flex;
-      justify-content: center;
-      align-items: center;
-      flex-direction: column;
-      font-family: Arial, sans-serif;
-      z-index: 1000;
-    }
     #enterBtn {
-      margin-top: 20px;
+      position: absolute;
+      top:50%; left:50%;
+      transform: translate(-50%, -50%);
       padding: 12px 24px;
+      font-size: 20px;
       background: white;
       color: black;
-      font-size: 20px;
       cursor: pointer;
+      z-index: 1000;
     }
   </style>
 </head>
 <body>
-  <!-- Loading Screen -->
-  <div id="loadingScreen">
-    <div>Loading VR Experience...</div>
-    <div id="enterBtn" style="display:none;">Click or Gaze Here to Enter</div>
-  </div>
 
-  <!-- A-Frame Scene -->
-  <a-scene id="vrScene" embedded vr-mode-ui="enabled: true" loading-screen="enabled: false">
-    <!-- Sky placeholder -->
-    <a-sky id="sceneSky"></a-sky>
+<div id="enterBtn">Click to Enter VR</div>
 
-    <!-- Camera + Cursor -->
-    <a-entity id="cameraRig">
-      <a-camera position="0 1.6 0">
-        <a-cursor
-          id="cursor"
-          fuse="true"
-          fuse-timeout="1500"
-          geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.02"
-          material="color: white; shader: flat"
-        ></a-cursor>
-      </a-camera>
-    </a-entity>
-  </a-scene>
+<a-scene id="vrScene" embedded vr-mode-ui="enabled: true">
+  <a-sky id="sceneSky" color="#000000"></a-sky>
+
+  <a-entity id="cameraRig">
+    <a-camera position="0 1.6 0">
+      <a-cursor
+        fuse="true"
+        fuse-timeout="1500"
+        geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.02"
+        material="color: white; shader: flat">
+      </a-cursor>
+    </a-camera>
+  </a-entity>
+</a-scene>
 
 <script>
-(async function() {
-  const loadingScreen = document.getElementById('loadingScreen');
+(async function(){
   const enterBtn = document.getElementById('enterBtn');
   const vrScene = document.getElementById('vrScene');
   const sceneSky = document.getElementById('sceneSky');
 
-  let currentAudio = null;
+  let currentScene = null;
 
-  // 1. Load global styles
-  const styles = await fetch('assets/config/styles.json').then(r => r.json());
-
-  // 2. Fetch scene list dynamically
+  // Load scene list
   const scenesManifest = await fetch('assets/scenes/scenes.json').then(r=>r.json());
 
-  // 3. Preload scene backgrounds only (audio will load on demand to avoid blocking)
-  let assetsToLoad = [];
-  scenesManifest.forEach(sceneNum => {
-    assetsToLoad.push(`assets/scenes/${sceneNum}/scene${sceneNum}.jpg`);
-  });
-
-  await Promise.all(assetsToLoad.map(src => {
-    return new Promise(resolve => {
-      const img = new Image();
-      img.src = src;
-      img.onload = resolve;
-    });
-  }));
-
-  // Show enter button after loading
-  enterBtn.style.display = 'block';
-
-  const startScene = () => {
-    loadingScreen.style.display = 'none';
-    loadScene(scenesManifest[0]); // load first scene
+  // Simple nav button style
+  const navStyle = {
+    width: 2, height: 0.8, color: '#222', textColor: '#fff'
   };
 
-  enterBtn.addEventListener('click', startScene);
-  enterBtn.addEventListener('mouseenter', () => startScene());
-
-  // Utility to clear previous scene elements (except sky & camera)
+  // Utility: clear old buttons
   function clearScene(){
-    Array.from(vrScene.children).forEach(el=>{
-      if(el.id !== 'sceneSky' && el.id !== 'cameraRig'){
-        vrScene.removeChild(el);
-      }
-    });
-    if(currentAudio){ currentAudio.pause(); currentAudio=null; }
+    Array.from(vrScene.querySelectorAll('.navButton')).forEach(el => vrScene.removeChild(el));
   }
 
-  // Create a nav button entity
-  function createNavButton(navData){
-    const { text, gotoScene, position } = navData;
-    const style = styles.navButton;
-
-    const button = document.createElement('a-plane');
-    button.setAttribute('width', style.width || 2);
-    button.setAttribute('height', style.height || 0.8);
-    button.setAttribute('color', style.background || '#222222');
-    button.setAttribute('position', position);
-    button.setAttribute('look-at', '#cameraRig');
-    button.setAttribute('class','navButton');
+  // Create a nav button
+  function createNavButton(btnData){
+    const btn = document.createElement('a-plane');
+    btn.setAttribute('width', navStyle.width);
+    btn.setAttribute('height', navStyle.height);
+    btn.setAttribute('color', navStyle.color);
+    btn.setAttribute('position', btnData.position);
+    btn.setAttribute('look-at', '#cameraRig');
+    btn.setAttribute('class','navButton');
 
     const btnText = document.createElement('a-text');
-    btnText.setAttribute('value', text);
-    btnText.setAttribute('color', style.color || '#fff');
+    btnText.setAttribute('value', btnData.text);
+    btnText.setAttribute('color', navStyle.textColor);
     btnText.setAttribute('align','center');
     btnText.setAttribute('position','0 0 0.01');
-    button.appendChild(btnText);
+    btn.appendChild(btnText);
 
-    button.addEventListener('click', () => loadScene(gotoScene));
-
-    return button;
+    btn.addEventListener('click', () => loadScene(btnData.gotoScene));
+    return btn;
   }
 
-  // Load a scene dynamically
+  // Load scene
   async function loadScene(sceneNum){
+    currentScene = sceneNum;
     clearScene();
 
     // Set sky
     sceneSky.setAttribute('src', `assets/scenes/${sceneNum}/scene${sceneNum}.jpg`);
 
-    // Play scene audio
-    currentAudio = new Audio(`assets/scenes/${sceneNum}/scene${sceneNum}.mp3`);
-    currentAudio.play();
-
-    // Load scene metadata
+    // Load nav buttons
     const sceneData = await fetch(`assets/scenes/${sceneNum}/scene${sceneNum}.json`).then(r=>r.json());
-
-    // Add multiple nav buttons
     if(sceneData.navButtons && sceneData.navButtons.length > 0){
       sceneData.navButtons.forEach(btnData => {
-        const navBtn = createNavButton(btnData);
-        vrScene.appendChild(navBtn);
+        const btn = createNavButton(btnData);
+        vrScene.appendChild(btn);
       });
     }
-
-    // TODO: dynamically load images, models, videos, other buttons
   }
+
+  // Start VR on Enter button click
+  enterBtn.addEventListener('click', ()=>{
+    enterBtn.style.display = 'none';
+    loadScene(scenesManifest[0]);
+  });
 
 })();
 </script>
