@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VR Flow (GH-ready v3.3)</title>
+  <title>VR Flow (GH-ready v3.4)</title>
   <link rel="icon" href="data:,">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <style>
@@ -124,7 +124,6 @@
       const waitText=document.getElementById('waitText');
       const intro=document.getElementById('intro');
       const vrGate=document.getElementById('vrGate');
-      const camera=document.getElementById('camera');
       const cursor=document.getElementById('cursor');
       const sceneEl=document.querySelector('a-scene');
 
@@ -144,12 +143,19 @@
         document.getElementById('gateBtn').onclick=async ()=>{ try{ await intro.play(); }catch(e){} gate.style.display='none'; };
       }
 
-      // When intro ends, arm the button
+      // When intro ends, arm the button (parent + child interactable for gaze)
       intro.addEventListener('ended', ()=>{
         try{ intro.pause(); intro.muted=true; }catch(e){}
         waitText.setAttribute('visible', false);
         setButtonEnabled(enterBtn,true);
-        setButtonInteractive(enterBtn,true);  // enables gaze
+        setButtonInteractive(enterBtn,true);
+        const btnLabel = enterBtn.querySelector('[canvas-text]');
+        if (btnLabel) {
+          const cls = (btnLabel.getAttribute('class') || '');
+          if (!cls.split(/\s+/).includes('interactable')) {
+            btnLabel.setAttribute('class', (cls + ' interactable').trim());
+          }
+        }
       }, {once:true});
 
       // Proceed handler (click / tap / gaze click)
@@ -157,22 +163,21 @@
         const enabled=(enterBtn.getAttribute('class')||'').includes('interactable');
         if(!enabled) return;
 
-        // HARDEN: fully disable Enter button
+        // Fully disable Enter button
         setButtonInteractive(enterBtn,false);
         enterBtn.removeEventListener('click', proceed);
         enterBtn.removeEventListener('mousedown', proceed);
         enterBtn.setAttribute('visible', false);
 
-        // HARDEN: shut down any VR audio gate remnants
+        // Shut down any VR audio gate remnants
         vrGate.setAttribute('visible', false);
         vrGate.setAttribute('class','');
-        // drop any lingering listeners
         vrGate.replaceWith(vrGate.cloneNode(true));
 
-        // NEW: Disable all post-intro interactions
-        camera.setAttribute('raycaster','enabled:false');
+        // Disable all post-intro interactions (cursor & raycaster)
         cursor.setAttribute('cursor','enabled:false');
         cursor.setAttribute('visible', false);
+        cursor.setAttribute('raycaster','enabled:false');
 
         startScene1();
       };
@@ -186,18 +191,21 @@
         vrGate.setAttribute('class','');
         try{ await intro.play(); }catch(e){}
       };
+
       sceneEl.addEventListener('enter-vr', ()=>{
+        // Cursor owns ray + fuse for VR
         cursor.setAttribute('cursor','rayOrigin: entity; fuse: true; fuseTimeout: 2000');
-        camera.setAttribute('raycaster','objects: .interactable; far: 20; interval: 100; enabled:true');
+        cursor.setAttribute('raycaster','objects: .interactable; far: 20; interval: 100; enabled:true');
         if(intro.paused){
           vrGate.setAttribute('visible', true);
           vrGate.setAttribute('class','interactable');
           vrGate.addEventListener('click', startAudio, {once:true});
         }
       });
+
       sceneEl.addEventListener('exit-vr', ()=>{
         cursor.setAttribute('cursor','rayOrigin: mouse; fuse: false');
-        camera.setAttribute('raycaster','enabled:true');
+        cursor.setAttribute('raycaster','enabled:true');
       });
     }
 
@@ -267,7 +275,7 @@
 </head>
 
 <body>
-  <div id="versionTag">GH-ready v3.3</div>
+  <div id="versionTag">GH-ready v3.4</div>
 
   <!-- Boot & desktop/mobile audio gate -->
   <div id="boot"><div class="spinner"></div><div>Loading…</div><div style="opacity:.7;font-size:13px;margin-top:6px;">Preparing fonts, images, audio, and videos</div></div>
@@ -292,17 +300,13 @@
       <video id="v4" src="Video_4.mp4" preload="auto" playsinline webkit-playsinline></video>
     </a-assets>
 
-    <!-- Rig + camera: raycaster on camera -->
+    <!-- Rig + camera (no raycaster here) -->
     <a-entity id="rig">
-      <a-entity id="camera"
-                camera
-                wasd-controls
-                look-controls
-                position="0 1.6 0"
-                raycaster="objects: .interactable; far: 20; interval: 100; enabled:true">
-        <!-- Visual cursor; switches to fuse in VR; gets disabled after proceed -->
+      <a-entity id="camera" camera wasd-controls look-controls position="0 1.6 0">
+        <!-- Cursor owns ray + fuse -->
         <a-entity id="cursor"
                   cursor="rayOrigin: mouse; fuse: false"
+                  raycaster="objects: .interactable; far: 20; interval: 100; enabled:true"
                   position="0 0 -1"
                   geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.015"
                   material="shader: flat; color: white; opacity: 0.9"></a-entity>
@@ -342,7 +346,7 @@
     <a-video id="vp4" position="-2.0 1.1 -2.4" width="3.6" height="2.025"  src="#v4"
              material="shader: flat; opacity: 0" visible="false" face-camera></a-video>
 
-    <!-- Thanks -->
+    <!-- Thanks (kept from your file) -->
     <a-entity id="thanksText" position="-2.0 1.1 -2.4" visible="false" face-camera
               canvas-text="value: धन्यवाद; width: 9; fontSize: 72; align: center; color: #8B4513;"></a-entity>
   </a-scene>
