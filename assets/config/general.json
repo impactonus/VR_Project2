@@ -1,5 +1,0 @@
-{
-  "video": { "autoplay": false, "pauseOthers": true, "stopSceneAudioOnPlay": true },
-  "audio": { "autoplay": true, "loop": false },
-  "placement": { "defaultSpacing": 20, "lookAtCamera": true }
-}
