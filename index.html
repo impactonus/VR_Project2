@@ -15,155 +15,263 @@
       // ---------- Face the camera ----------
       AFRAME.registerComponent('face-camera', {
         schema: { onlyY: {type: 'boolean', default: true} },
-        init() {
-          this.cam = document.querySelector('#camera');
-          this.tmpCam = new THREE.Vector3();
-          this.tmpObj = new THREE.Vector3();
-        },
-        tick() {
-          if (!this.cam) return;
-          const o = this.el.object3D;
+        init(){ this.cam=document.querySelector('#camera'); this.tmpCam=new THREE.Vector3(); this.tmpObj=new THREE.Vector3(); },
+        tick(){
+          if(!this.cam) return;
+          const o=this.el.object3D;
           this.cam.object3D.getWorldPosition(this.tmpCam);
           o.getWorldPosition(this.tmpObj);
-          const t = this.tmpCam.clone();
-          if (this.data.onlyY) t.y = this.tmpObj.y;
+          const t=this.tmpCam.clone();
+          if(this.data.onlyY) t.y=this.tmpObj.y;
           o.lookAt(t);
         }
       });
 
-      // ---------- Robust Canvas Text (loads TTF via FontFace, waits, then draws) ----------
-      // NOTE: Uses ./assets/NotoSansDevanagari-Regular.ttf (same-origin on GitHub Pages)
+      // ---------- Canvas Text (Unicode-safe, loads font per-instance if needed) ----------
       AFRAME.registerComponent('canvas-text', {
         schema: {
-          value:       {type: 'string',  default: 'पाठ'},
-          width:       {type: 'number',  default: 1.2},     // world meters
-          maxWidthPx:  {type: 'int',     default: 1024},    // wrap width (px)
-          fontFamily:  {type: 'string',  default: 'NotoDev'},
-          fontUrl:     {type: 'string',  default: './assets/NotoSansDevanagari-Regular.ttf'},
-          fontSize:    {type: 'int',     default: 64},      // px
-          lineHeight:  {type: 'number',  default: 1.25},
-          color:       {type: 'string',  default: '#FFFFFF'},
-          bg:          {type: 'string',  default: 'transparent'},
-          paddingPx:   {type: 'int',     default: 16},
-          align:       {type: 'string',  default: 'center'} // left|center|right
+          value:{type:'string',default:'पाठ'}, width:{type:'number',default:1.2},
+          maxWidthPx:{type:'int',default:1024}, fontFamily:{type:'string',default:'NotoDev'},
+          fontUrl:{type:'string',default:'./assets/NotoSansDevanagari-Regular.ttf'},
+          fontSize:{type:'int',default:64}, lineHeight:{type:'number',default:1.25},
+          color:{type:'string',default:'#FFFFFF'}, bg:{type:'string',default:'transparent'},
+          paddingPx:{type:'int',default:16}, align:{type:'string',default:'center'}
         },
-        async init() {
-          this.canvas = document.createElement('canvas');
-          this.canvas.width = 4; this.canvas.height = 4; // never 0×0
-          this.ctx = this.canvas.getContext('2d');
+        async init(){
+          this.canvas=document.createElement('canvas'); this.canvas.width=4; this.canvas.height=4;
+          this.ctx=this.canvas.getContext('2d');
+          this.texture=new THREE.CanvasTexture(this.canvas);
+          this.texture.generateMipmaps=false; this.texture.minFilter=THREE.LinearFilter; this.texture.magFilter=THREE.LinearFilter;
+          this.texture.wrapS=THREE.ClampToEdgeWrapping; this.texture.wrapT=THREE.ClampToEdgeWrapping; this.texture.needsUpdate=true;
 
-          this.texture = new THREE.CanvasTexture(this.canvas);
-          this.texture.generateMipmaps = false;
-          this.texture.minFilter = THREE.LinearFilter;
-          this.texture.magFilter = THREE.LinearFilter;
-          this.texture.wrapS = THREE.ClampToEdgeWrapping;
-          this.texture.wrapT = THREE.ClampToEdgeWrapping;
-          this.texture.needsUpdate = true;
+          if(!this.el.getAttribute('geometry')) this.el.setAttribute('geometry','primitive: plane; width: 1; height: 0.5');
 
-          if (!this.el.getAttribute('geometry')) {
-            this.el.setAttribute('geometry', 'primitive: plane; width: 1; height: 0.5');
-          }
-
-          const attach = () => {
-            const mesh = this.el.getObject3D('mesh');
-            if (!mesh) return;
-            mesh.material = new THREE.MeshBasicMaterial({
-              map: this.texture,
-              transparent: true,
-              color: 0xffffff,
-              depthTest: true,
-              depthWrite: false,
-              side: THREE.DoubleSide
-            });
-            mesh.material.needsUpdate = true;
+          const attach=()=>{ const mesh=this.el.getObject3D('mesh'); if(!mesh) return;
+            mesh.material=new THREE.MeshBasicMaterial({map:this.texture,transparent:true,color:0xffffff,depthTest:true,depthWrite:false,side:THREE.DoubleSide});
+            mesh.material.needsUpdate=true;
           };
-          if (this.el.getObject3D('mesh')) attach();
-          else this.el.addEventListener('object3dset', e => { if (e.detail.type === 'mesh') attach(); });
+          this.el.getObject3D('mesh') ? attach() : this.el.addEventListener('object3dset',e=>{if(e.detail.type==='mesh') attach();});
 
-          await this._loadFont();   // <- key: load via FontFace
+          // Wait for global font (set by loader) or load locally if not set.
+          if (window.__notoFontReadyPromise) { await window.__notoFontReadyPromise; }
+          else { await this._loadFont(); }
+
           this._draw();
         },
-        async update() {
-          if (!this.fontReady) await this._loadFont();
-          this._draw();
-        },
-        async _loadFont() {
-          if (this.fontReady) return;
-          try {
-            // Use FontFace API for deterministic load (works well on GitHub Pages)
-            const face = new FontFace(this.data.fontFamily, `url("${this.data.fontUrl}")`, {style:'normal', weight:'400', display:'swap'});
-            const loaded = await face.load();
-            document.fonts.add(loaded);
-            // Also wait for CSS Font Loading set to be ready (belt & suspenders)
+        async update(){ if(!this.fontReady && !window.__notoFontReadyPromise) await this._loadFont(); this._draw(); },
+        async _loadFont(){
+          if(this.fontReady) return;
+          try{
+            const face=new FontFace(this.data.fontFamily, `url("${this.data.fontUrl}")`, {style:'normal',weight:'400',display:'swap'});
+            const loaded=await face.load(); document.fonts.add(loaded);
             if (document.fonts && document.fonts.ready) { await document.fonts.ready; }
-            this.fontReady = true;
-          } catch (e) {
-            console.warn('Font load failed, falling back to system font:', e);
-            this.fontReady = true; // still draw with fallback
-          }
+            this.fontReady=true;
+          }catch(e){ console.warn('Font load failed, using system fallback:',e); this.fontReady=true; }
         },
-        _wrapLines(text, maxWidthPx) {
-          const ctx = this.ctx, words = text.split(/\s+/), lines = [];
-          let line = '';
-          for (let i=0;i<words.length;i++){
-            const test = line ? (line + ' ' + words[i]) : words[i];
-            if (ctx.measureText(test).width > maxWidthPx && line) { lines.push(line); line = words[i]; }
-            else { line = test; }
+        _wrapLines(text,maxWidthPx){
+          const ctx=this.ctx, words=text.split(/\s+/), lines=[]; let line='';
+          for(let i=0;i<words.length;i++){ const test=line?(line+' '+words[i]):words[i];
+            if(ctx.measureText(test).width>maxWidthPx && line){ lines.push(line); line=words[i]; } else { line=test; }
           }
-          if (line) lines.push(line);
-          return lines;
+          if(line) lines.push(line); return lines;
         },
-        _draw() {
-          const d = this.data, ctx = this.ctx;
-          const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-
-          // IMPORTANT: always set font each draw
-          ctx.font = `${d.fontSize * dpr}px "${d.fontFamily}"`;
-          ctx.textBaseline = 'alphabetic';
-          ctx.fillStyle = d.color;
-
-          const padding = d.paddingPx * dpr;
-          const maxW = d.maxWidthPx * dpr;
-
-          const lines = [];
-          d.value.split('\n').forEach(para => {
-            if (para === '') { lines.push(''); return; }
-            this._wrapLines(para, maxW).forEach(l => lines.push(l));
-          });
-
-          const lh = d.fontSize * d.lineHeight * dpr;
-          const textHeight = Math.max(lh, lines.length * lh);
-          const canvasW = Math.max(4, Math.ceil(maxW + padding * 2));
-          const canvasH = Math.max(4, Math.ceil(textHeight + padding * 2));
-
-          if (this.canvas.width !== canvasW || this.canvas.height !== canvasH) {
-            this.canvas.width = canvasW; this.canvas.height = canvasH;
-          }
-
-          ctx.clearRect(0, 0, canvasW, canvasH);
-          if (d.bg && d.bg !== 'transparent') {
-            ctx.fillStyle = d.bg; ctx.fillRect(0, 0, canvasW, canvasH); ctx.fillStyle = d.color;
-          }
-
-          if (d.align === 'left') ctx.textAlign = 'left';
-          else if (d.align === 'right') ctx.textAlign = 'right';
-          else ctx.textAlign = 'center';
-
-          const x = d.align === 'left' ? padding : d.align === 'right' ? (canvasW - padding) : (canvasW / 2);
-          let y = padding + (d.fontSize * dpr);
-          for (const line of lines) { ctx.fillText(line, x, y); y += lh; }
-
-          this.texture.needsUpdate = true;
-
-          const aspect = canvasH / canvasW;
-          this.el.setAttribute('geometry', `primitive: plane; width: ${d.width}; height: ${d.width * aspect}`);
+        _draw(){
+          const d=this.data, ctx=this.ctx, dpr=Math.max(1, Math.min(2, window.devicePixelRatio||1));
+          ctx.font=`${d.fontSize*dpr}px "${d.fontFamily}"`; ctx.textBaseline='alphabetic'; ctx.fillStyle=d.color;
+          const padding=d.paddingPx*dpr, maxW=d.maxWidthPx*dpr, lines=[];
+          d.value.split('\n').forEach(p=>{ if(p===''){lines.push(''); return;} this._wrapLines(p,maxW).forEach(l=>lines.push(l)); });
+          const lh=d.fontSize*d.lineHeight*dpr, textH=Math.max(lh, lines.length*lh);
+          const W=Math.max(4, Math.ceil(maxW+padding*2)), H=Math.max(4, Math.ceil(textH+padding*2));
+          if(this.canvas.width!==W || this.canvas.height!==H){ this.canvas.width=W; this.canvas.height=H; }
+          ctx.clearRect(0,0,W,H);
+          if(d.bg && d.bg!=='transparent'){ ctx.fillStyle=d.bg; ctx.fillRect(0,0,W,H); ctx.fillStyle=d.color; }
+          ctx.textAlign = d.align==='left'?'left': (d.align==='right'?'right':'center');
+          const x = d.align==='left'? padding : d.align==='right'? (W-padding) : (W/2);
+          let y = padding + (d.fontSize*dpr);
+          for(const line of lines){ ctx.fillText(line, x, y); y+=lh; }
+          this.texture.needsUpdate=true;
+          const aspect=H/W; this.el.setAttribute('geometry', `primitive: plane; width: ${d.width}; height: ${d.width*aspect}`);
         }
       });
+
+      // ---------- Utility helpers ----------
+      const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+      function fadeIn(el, ms=1000){ el.setAttribute('visible', true); el.setAttribute('animation__fadein',{property:'material.opacity',from:0,to:1,dur:ms,easing:'easeInOutQuad'}); }
+      function fadeOut(el, ms=1000){ const current=(el.getAttribute('material')||{}).opacity||1; el.setAttribute('animation__fadeout',{property:'material.opacity',from:current,to:0,dur:ms,easing:'easeInOutQuad'}); setTimeout(()=>el.setAttribute('visible',false), ms); }
+      function setButtonEnabled(btn, enabled){ btn.setAttribute('material','color', enabled ? '#28a745' : '#666'); }
+      function setButtonInteractive(btn, on){ const cls=btn.getAttribute('class')||''; const has=cls.split(/\s+/).includes('interactable'); if(on && !has) btn.setAttribute('class',(cls+' interactable').trim()); if(!on && has) btn.setAttribute('class', cls.replace(/\binteractable\b/,'').trim()); }
+
+      // ---------- Preloader: wait for assets + font, show progress ----------
+      async function preloadAll(){
+        const assetsEl = document.querySelector('#assets');
+        const loader = document.getElementById('loader');
+        const loaderText = document.getElementById('loaderText');
+
+        // Font Promise (global so canvas-text can reuse)
+        window.__notoFontReadyPromise = (async ()=>{
+          try{
+            const face=new FontFace('NotoDev', 'url("./assets/NotoSansDevanagari-Regular.ttf")', {style:'normal',weight:'400',display:'swap'});
+            const loaded=await face.load(); document.fonts.add(loaded);
+            if (document.fonts && document.fonts.ready) { await document.fonts.ready; }
+          }catch(e){ console.warn('Global font load failed (fallback will be used):', e); }
+        })();
+
+        // Show loader
+        loader.setAttribute('visible', true);
+
+        // Track A-Frame asset progress if available
+        function updatePct(loaded, total){
+          const pct = total ? Math.round((loaded/total)*100) : 0;
+          loaderText.setAttribute('canvas-text', `value: लोड हो रहा है… ${pct}% ; width: 1.6; fontSize: 64; align: center;`);
+        }
+        updatePct(0, 1);
+
+        const assetsReady = new Promise((resolve)=>{
+          if (assetsEl.hasLoaded) { updatePct(1,1); resolve(); return; }
+          assetsEl.addEventListener('progress', (e)=>{ if(e && e.detail){ updatePct(e.detail.loaded||0, e.detail.total||1); }});
+          assetsEl.addEventListener('loaded', ()=>{ updatePct(1,1); resolve(); }, {once:true});
+        });
+
+        // Wait for both: all assets + font file
+        await Promise.all([assetsReady, window.__notoFontReadyPromise]);
+
+        // Hide loader
+        loader.setAttribute('visible', false);
+      }
+
+      // ---------- Scene boot (runs AFTER preload completes) ----------
+      function bootScene(){
+        const enterBtn = document.getElementById('enterBtn');
+        const waitText = document.getElementById('waitText');
+        const intro = document.getElementById('intro');
+
+        let enterArmed = false;
+
+        // Start disabled: visible but not interactable
+        waitText.setAttribute('visible', true);
+        setButtonEnabled(enterBtn, false);
+        setButtonInteractive(enterBtn, false);
+
+        // Try autoplay (may be blocked)
+        intro.play().catch(()=>{});
+
+        // Autoplay fallback hint
+        setTimeout(() => {
+          if (!enterArmed && intro.currentTime === 0) {
+            waitText.setAttribute('canvas-text',
+              'value: कृपया ऑडियो शुरू करने के लिए टैप/क्लिक करें.; width: 2.2; fontSize: 60; align: center;');
+            setButtonInteractive(enterBtn, true);
+            setButtonEnabled(enterBtn, true);
+          }
+        }, 1500);
+
+        intro.addEventListener('ended', () => {
+          try { intro.pause(); intro.muted = true; intro.currentTime = intro.duration || intro.currentTime; } catch(e){}
+          waitText.setAttribute('visible', false);
+          setButtonInteractive(enterBtn, true);
+          setButtonEnabled(enterBtn, true);
+          enterArmed = true;
+        }, { once: true });
+
+        intro.addEventListener('error', () => {
+          setButtonInteractive(enterBtn, true);
+          setButtonEnabled(enterBtn, true);
+          enterArmed = true;
+          waitText.setAttribute('canvas-text',
+            'value: ऑडियो लोड नहीं हुआ। आगे बढ़ें बटन दबाएँ.; width: 2.2; fontSize: 60; align: center; color: #FFCC00;');
+        }, { once: true });
+
+        const activate = () => {
+          if (!enterArmed) { if (intro.paused) { intro.play().catch(()=>{}); } return; }
+          startScene1();
+          enterBtn.setAttribute('visible', false);
+        };
+
+        enterBtn.addEventListener('click', activate);
+        enterBtn.addEventListener('mousedown', activate);
+      }
+
+      // ---------- Flow ----------
+      async function startScene1() {
+        const bg = document.getElementById('bg');
+        const thanksText = document.getElementById('thanksText');
+        const a1 = document.getElementById('a1');
+        const a2 = document.getElementById('a2');
+        const a3 = document.getElementById('a3');
+        const a4 = document.getElementById('a4');
+        const a5 = document.getElementById('a5');
+        const v1 = document.getElementById('v1');
+        const v2 = document.getElementById('v2');
+        const v3 = document.getElementById('v3');
+        const v4 = document.getElementById('v4');
+        const vp1 = document.getElementById('vp1');
+        const vp2 = document.getElementById('vp2');
+        const vp3 = document.getElementById('vp3');
+        const vp4 = document.getElementById('vp4');
+        const fadeCfg = { inMs: 1000, outMs: 1000, delayThumbMs: 2200 };
+
+        // Safety: silence/stop intro
+        const intro = document.getElementById('intro'); try { intro.pause(); intro.muted = true; } catch(e){}
+
+        bg.setAttribute('material', 'shader: flat; side: back; src: #scene1');
+
+        await playSegment(a1, v1, vp1, fadeCfg);
+        await playSegment(a2, v2, vp2, fadeCfg);
+        await playSegment(a3, v3, vp3, fadeCfg);
+        await playSegment(a4, v4, vp4, fadeCfg);
+
+        bg.setAttribute('material', 'shader: flat; side: back; src: #scene2');
+        thanksText.setAttribute('visible', true);
+        a5.play();
+      }
+
+      async function playSegment(audioEl, videoEl, videoSurface, fadeCfg) {
+        try {
+          try { videoEl.pause(); } catch(e){} try { videoEl.currentTime = 0; } catch(e){} try { videoEl.load(); } catch(e){}
+
+          await new Promise(resolve => {
+            if (videoEl.readyState >= 2) return resolve();
+            const onReady = () => { cleanup(); resolve(); };
+            const cleanup = () => {
+              videoEl.removeEventListener('loadeddata', onReady);
+              videoEl.removeEventListener('canplay', onReady);
+              videoEl.removeEventListener('loadedmetadata', onReady);
+            };
+            videoEl.addEventListener('loadeddata', onReady, { once: true });
+            videoEl.addEventListener('canplay', onReady, { once: true });
+            videoEl.addEventListener('loadedmetadata', onReady, { once: true });
+          });
+
+          videoSurface.setAttribute('visible', true);
+          videoSurface.setAttribute('material', 'opacity', 0);
+          try { videoEl.muted = true; await videoEl.play(); await sleep(80); videoEl.pause(); } catch(e){}
+
+          await audioEl.play();
+          await sleep(fadeCfg.delayThumbMs);
+          fadeIn(videoSurface, fadeCfg.inMs);
+
+          await new Promise(res => { audioEl.addEventListener('ended', res, {once:true}); });
+          try { videoEl.muted = false; videoEl.volume = 1.0; } catch(e){}
+          try { await videoEl.play(); } catch(e) { console.warn('Video play rejected', e); }
+          await new Promise(res => { videoEl.addEventListener('ended', res, {once:true}); });
+
+          fadeOut(videoSurface, fadeCfg.outMs);
+          await sleep(fadeCfg.outMs + 50);
+          videoSurface.setAttribute('visible', false);
+        } catch(err) { console.error('playSegment error', err); }
+      }
+
+      // ---------- Boot: wait for assets & font, then start UI logic ----------
+      (function(){
+        const sceneEl = document.querySelector('a-scene');
+        const start = async ()=>{ await preloadAll(); bootScene(); };
+        sceneEl ? (sceneEl.hasLoaded ? start() : sceneEl.addEventListener('loaded', start, {once:true})) : window.addEventListener('load', start, {once:true});
+      })();
     </script>
   </head>
 
   <body>
-    <div id="versionTag">Code Version: v2.4-gh-fontface</div>
+    <div id="versionTag">Code Version: v2.5-preloader</div>
 
     <a-scene renderer="colorManagement: true; antialias: true" background="color: #000">
       <a-assets id="assets" timeout="60000">
@@ -205,18 +313,23 @@
       <!-- Background -->
       <a-sky id="bg" radius="500" material="shader: flat; side: back; src: #introBg"></a-sky>
 
-      <!-- Enter button -->
+      <!-- LOADER (shown until assets + font ready) -->
+      <a-entity id="loader" position="0 1.8 -1.5" visible="true" face-camera>
+        <a-entity id="loaderText" canvas-text="value: लोड हो रहा है… 0% ; width: 1.6; fontSize: 64; align: center; bg: rgba(0,0,0,0.35); paddingPx: 18;"></a-entity>
+      </a-entity>
+
+      <!-- Enter button (initially present but will be disabled until intro ends) -->
       <a-plane id="enterBtn"
                position="-1 1.3 -2" width="0.8" height="0.3"
                material="color: #666; opacity: 1; shader: flat"
                face-camera>
         <a-entity position="0 0 0.01" face-camera
-          canvas-text="value: आगे बढ़ें; width: 0.75; fontSize: 72; align: center;"></a-entity>
+                  canvas-text="value: आगे बढ़ें; width: 0.75; fontSize: 72; align: center;"></a-entity>
       </a-plane>
 
       <!-- Wait text -->
       <a-entity id="waitText" position="-1 1.8 -2" visible="true" face-camera
-        canvas-text="value: कृपया ऑडियो पूरा होने तक प्रतीक्षा करें.; width: 2; fontSize: 60; align: center;"></a-entity>
+                canvas-text="value: कृपया ऑडियो पूरा होने तक प्रतीक्षा करें.; width: 2; fontSize: 60; align: center;"></a-entity>
 
       <!-- Videos -->
       <a-video id="vp1" position="-1.2 1.35 -2" width="3.6" height="2.025" src="#v1"
@@ -230,148 +343,7 @@
 
       <!-- Thanks text -->
       <a-entity id="thanksText" position="0 1.8 -2" visible="false" face-camera
-        canvas-text="value: धन्यवाद; width: 2; fontSize: 72; align: center;"></a-entity>
+                canvas-text="value: धन्यवाद; width: 2; fontSize: 72; align: center;"></a-entity>
     </a-scene>
-
-    <script>
-      // ===== Helpers =====
-      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-      function waitForEnded(mediaEl) {
-        return new Promise(res => { const onEnd=()=>{mediaEl.removeEventListener('ended',onEnd);res();}; mediaEl.addEventListener('ended', onEnd); });
-      }
-      function fadeIn(el, ms=1000){ el.setAttribute('visible', true); el.setAttribute('animation__fadein', {property:'material.opacity', from:0, to:1, dur:ms, easing:'easeInOutQuad'}); }
-      function fadeOut(el, ms=1000){ const current=(el.getAttribute('material')||{}).opacity||1; el.setAttribute('animation__fadeout', {property:'material.opacity', from:current, to:0, dur:ms, easing:'easeInOutQuad'}); setTimeout(()=>el.setAttribute('visible', false), ms); }
-      function setButtonEnabled(btn, enabled){ btn.setAttribute('material', 'color', enabled ? '#28a745' : '#666'); }
-      function setButtonInteractive(btn, on){ const cls=btn.getAttribute('class')||''; const has=cls.split(/\s+/).includes('interactable'); if(on && !has) btn.setAttribute('class', (cls+' interactable').trim()); if(!on && has) btn.setAttribute('class', cls.replace(/\binteractable\b/, '').trim()); }
-
-      // ===== Init (GitHub Pages–safe) =====
-      (function(){
-        function initScene(){
-          const enterBtn = document.getElementById('enterBtn');
-          const waitText = document.getElementById('waitText');
-          const intro = document.getElementById('intro');
-
-          let enterArmed = false;
-
-          waitText.setAttribute('visible', true);
-          setButtonEnabled(enterBtn, false);
-          setButtonInteractive(enterBtn, false);
-
-          intro.play().catch(()=>{});
-
-          setTimeout(() => {
-            if (!enterArmed && intro.currentTime === 0) {
-              waitText.setAttribute('canvas-text',
-                'value: कृपया ऑडियो शुरू करने के लिए टैप/क्लिक करें.; width: 2.2; fontSize: 60; align: center;');
-              setButtonInteractive(enterBtn, true);
-              setButtonEnabled(enterBtn, true);
-            }
-          }, 1500);
-
-          intro.addEventListener('ended', () => {
-            try { intro.pause(); intro.muted = true; intro.currentTime = intro.duration || intro.currentTime; } catch(e){}
-            waitText.setAttribute('visible', false);
-            setButtonInteractive(enterBtn, true);
-            setButtonEnabled(enterBtn, true);
-            enterArmed = true;
-          }, { once: true });
-
-          intro.addEventListener('error', () => {
-            setButtonInteractive(enterBtn, true);
-            setButtonEnabled(enterBtn, true);
-            enterArmed = true;
-            waitText.setAttribute('canvas-text',
-              'value: ऑडियो लोड नहीं हुआ। आगे बढ़ें बटन दबाएँ.; width: 2.2; fontSize: 60; align: center; color: #FFCC00;');
-          }, { once: true });
-
-          const activate = () => {
-            if (!enterArmed) { if (intro.paused) { intro.play().catch(()=>{}); } return; }
-            startScene1();
-            enterBtn.setAttribute('visible', false);
-          };
-
-          enterBtn.addEventListener('click', activate);
-          enterBtn.addEventListener('mousedown', activate);
-        }
-
-        const sceneEl = document.querySelector('a-scene');
-        if (sceneEl) { sceneEl.hasLoaded ? initScene() : sceneEl.addEventListener('loaded', initScene, { once: true }); }
-        else { window.addEventListener('load', initScene, { once: true }); }
-      })();
-
-      // ===== Flow =====
-      async function startScene1() {
-        const bg = document.getElementById('bg');
-        const thanksText = document.getElementById('thanksText');
-        const a1 = document.getElementById('a1');
-        const a2 = document.getElementById('a2');
-        const a3 = document.getElementById('a3');
-        const a4 = document.getElementById('a4');
-        const a5 = document.getElementById('a5');
-        const v1 = document.getElementById('v1');
-        const v2 = document.getElementById('v2');
-        const v3 = document.getElementById('v3');
-        const v4 = document.getElementById('v4');
-        const vp1 = document.getElementById('vp1');
-        const vp2 = document.getElementById('vp2');
-        const vp3 = document.getElementById('vp3');
-        const vp4 = document.getElementById('vp4');
-        const fadeCfg = { inMs: 1000, outMs: 1000, delayThumbMs: 2200 };
-
-        const intro = document.getElementById('intro');
-        try { intro.pause(); intro.muted = true; } catch(e){}
-
-        bg.setAttribute('material', 'shader: flat; side: back; src: #scene1');
-
-        await playSegment(a1, v1, vp1, fadeCfg);
-        await playSegment(a2, v2, vp2, fadeCfg);
-        await playSegment(a3, v3, vp3, fadeCfg);
-        await playSegment(a4, v4, vp4, fadeCfg);
-
-        bg.setAttribute('material', 'shader: flat; side: back; src: #scene2');
-        thanksText.setAttribute('visible', true);
-        a5.play();
-      }
-
-      async function playSegment(audioEl, videoEl, videoSurface, fadeCfg) {
-        try {
-          try { videoEl.pause(); } catch(e){}
-          try { videoEl.currentTime = 0; } catch(e){}
-          try { videoEl.load(); } catch(e){}
-
-          await new Promise(resolve => {
-            if (videoEl.readyState >= 2) return resolve();
-            const onReady = () => { cleanup(); resolve(); };
-            const cleanup = () => {
-              videoEl.removeEventListener('loadeddata', onReady);
-              videoEl.removeEventListener('canplay', onReady);
-              videoEl.removeEventListener('loadedmetadata', onReady);
-            };
-            videoEl.addEventListener('loadeddata', onReady, { once: true });
-            videoEl.addEventListener('canplay', onReady, { once: true });
-            videoEl.addEventListener('loadedmetadata', onReady, { once: true });
-          });
-
-          videoSurface.setAttribute('visible', true);
-          videoSurface.setAttribute('material', 'opacity', 0);
-          try { videoEl.muted = true; await videoEl.play(); await sleep(80); videoEl.pause(); } catch(e){}
-
-          await audioEl.play();
-          await sleep(fadeCfg.delayThumbMs);
-          fadeIn(videoSurface, fadeCfg.inMs);
-
-          await waitForEnded(audioEl);
-          try { videoEl.muted = false; videoEl.volume = 1.0; } catch(e){}
-          try { await videoEl.play(); } catch(e) { console.warn('Video play rejected', e); }
-          await waitForEnded(videoEl);
-
-          fadeOut(videoSurface, fadeCfg.outMs);
-          await sleep(fadeCfg.outMs + 50);
-          videoSurface.setAttribute('visible', false);
-        } catch(err) {
-          console.error('playSegment error', err);
-        }
-      }
-    </script>
   </body>
 </html>
