@@ -1,349 +1,407 @@
 <!DOCTYPE html>
 <html lang="hi">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>VR Flow: Intro → Scene 1 → Scene 2</title>
-    <link rel="icon" href="data:,">
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <style>
-      body { margin: 0; background:#000; }
-      #versionTag { position: fixed; top: 6px; left: 10px; z-index: 9999; font: 12px/1 monospace; color:#0f0; opacity:.8; }
-    </style>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VR Flow: Intro → Scene 1 → Scene 2</title>
+  <!-- Prevent favicon 404 on GH Pages -->
+  <link rel="icon" href="data:,">
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
-    <script>
-      // ---------- Face the camera ----------
-      AFRAME.registerComponent('face-camera', {
-        schema: { onlyY: {type: 'boolean', default: true} },
-        init(){ this.cam=document.querySelector('#camera'); this.tmpCam=new THREE.Vector3(); this.tmpObj=new THREE.Vector3(); },
-        tick(){
-          if(!this.cam) return;
-          const o=this.el.object3D;
-          this.cam.object3D.getWorldPosition(this.tmpCam);
-          o.getWorldPosition(this.tmpObj);
-          const t=this.tmpCam.clone();
-          if(this.data.onlyY) t.y=this.tmpObj.y;
-          o.lookAt(t);
-        }
-      });
+  <style>
+    :root { --ui: #111; --ok:#28a745; --muted:#666; }
+    html, body { height:100%; margin:0; background:#fff; }
+    /* Font (same folder as this HTML) */
+    @font-face {
+      font-family: 'NotoDev';
+      src: url('NotoSansDevanagari-Regular.ttf') format('truetype');
+      font-weight: normal; font-style: normal; font-display: swap;
+    }
 
-      // ---------- Canvas Text (Unicode-safe, loads font per-instance if needed) ----------
-      AFRAME.registerComponent('canvas-text', {
-        schema: {
-          value:{type:'string',default:'पाठ'}, width:{type:'number',default:1.2},
-          maxWidthPx:{type:'int',default:1024}, fontFamily:{type:'string',default:'NotoDev'},
-          fontUrl:{type:'string',default:'./assets/NotoSansDevanagari-Regular.ttf'},
-          fontSize:{type:'int',default:64}, lineHeight:{type:'number',default:1.25},
-          color:{type:'string',default:'#FFFFFF'}, bg:{type:'string',default:'transparent'},
-          paddingPx:{type:'int',default:16}, align:{type:'string',default:'center'}
-        },
-        async init(){
-          this.canvas=document.createElement('canvas'); this.canvas.width=4; this.canvas.height=4;
-          this.ctx=this.canvas.getContext('2d');
-          this.texture=new THREE.CanvasTexture(this.canvas);
-          this.texture.generateMipmaps=false; this.texture.minFilter=THREE.LinearFilter; this.texture.magFilter=THREE.LinearFilter;
-          this.texture.wrapS=THREE.ClampToEdgeWrapping; this.texture.wrapT=THREE.ClampToEdgeWrapping; this.texture.needsUpdate=true;
+    /* Fullscreen white loader */
+    #boot {
+      position: fixed; inset:0;
+      background:#fff; color:#000; display:flex; align-items:center; justify-content:center;
+      font: 18px/1.5 "NotoDev", system-ui, Arial, sans-serif; z-index:99999;
+      flex-direction:column;
+    }
+    #boot .spinner {
+      width:44px;height:44px;border-radius:50%;
+      border:4px solid #ddd;border-top-color:#333; animation:spin 1.0s linear infinite; margin-bottom:12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-          if(!this.el.getAttribute('geometry')) this.el.setAttribute('geometry','primitive: plane; width: 1; height: 0.5');
+    /* Audio-gate (when autoplay blocked) */
+    #gate {
+      position: fixed; inset:0; display:none; z-index:99998;
+      background: rgba(255,255,255,0.98); color:#000; align-items:center; justify-content:center; flex-direction:column;
+      font: 18px/1.5 "NotoDev", system-ui, Arial, sans-serif;
+    }
+    #gate button {
+      margin-top: 10px; padding:10px 16px; border-radius:10px; border:0; cursor:pointer;
+      background:#111; color:#fff; font: inherit;
+    }
 
-          const attach=()=>{ const mesh=this.el.getObject3D('mesh'); if(!mesh) return;
-            mesh.material=new THREE.MeshBasicMaterial({map:this.texture,transparent:true,color:0xffffff,depthTest:true,depthWrite:false,side:THREE.DoubleSide});
-            mesh.material.needsUpdate=true;
+    /* Version tag */
+    #versionTag { position: fixed; top: 6px; left: 10px; z-index: 9; font: 12px/1 monospace; color:#0a0; opacity:.8; }
+  </style>
+
+  <script>
+    // ---------- face-camera (billboard) ----------
+    AFRAME.registerComponent('face-camera', {
+      schema: { onlyY: {type: 'boolean', default: true} },
+      init() {
+        this.cam = document.querySelector('#camera');
+        this.tmpCam = new THREE.Vector3(); this.tmpObj = new THREE.Vector3();
+      },
+      tick() {
+        if (!this.cam) return;
+        const obj = this.el.object3D;
+        this.cam.object3D.getWorldPosition(this.tmpCam);
+        obj.getWorldPosition(this.tmpObj);
+        if (this.data.onlyY) { const t = this.tmpCam.clone(); t.y = this.tmpObj.y; obj.lookAt(t); }
+        else obj.lookAt(this.tmpCam);
+      }
+    });
+
+    // ---------- canvas-text (Unicode via Canvas) ----------
+    AFRAME.registerComponent('canvas-text', {
+      schema: {
+        value:{type:'string',default:'पाठ'}, width:{type:'number',default:1.2},
+        maxWidthPx:{type:'int',default:1024}, fontFamily:{type:'string',default:'NotoDev'},
+        fontSize:{type:'int',default:64}, lineHeight:{type:'number',default:1.25},
+        color:{type:'string',default:'#FFFFFF'}, bg:{type:'string',default:'transparent'},
+        paddingPx:{type:'int',default:16}, align:{type:'string',default:'center'}
+      },
+      init() {
+        this.canvas=document.createElement('canvas'); this.canvas.width=4; this.canvas.height=4;
+        this.ctx=this.canvas.getContext('2d');
+        this.texture=new THREE.CanvasTexture(this.canvas);
+        this.texture.generateMipmaps=false; this.texture.minFilter=THREE.LinearFilter; this.texture.magFilter=THREE.LinearFilter;
+        this.texture.wrapS=THREE.ClampToEdgeWrapping; this.texture.wrapT=THREE.ClampToEdgeWrapping; this.texture.needsUpdate=true;
+        if (!this.el.getAttribute('geometry')) this.el.setAttribute('geometry','primitive:plane;width:1;height:0.5');
+
+        const attach=()=> {
+          const mesh=this.el.getObject3D('mesh'); if(!mesh) return;
+          mesh.material=new THREE.MeshBasicMaterial({ map:this.texture, transparent:true, color:0xffffff, depthTest:true, depthWrite:false, side:THREE.DoubleSide });
+          mesh.material.needsUpdate=true;
+          this._ensureFont().then(()=>this._draw());
+        };
+        if (this.el.getObject3D('mesh')) attach();
+        else this.el.addEventListener('object3dset',e=>{ if(e.detail.type==='mesh') attach(); });
+      },
+      update(){ this._ensureFont().then(()=>this._draw()); },
+      _ensureFont(){ if (document.fonts && document.fonts.load) return document.fonts.load(`16px "${this.data.fontFamily}"`).catch(()=>{}); return Promise.resolve(); },
+      _wrapLines(text,maxWidth){ const ctx=this.ctx,words=text.split(/\s+/),lines=[]; let line=''; for(let i=0;i<words.length;i++){ const test=line?(line+' '+words[i]):words[i]; if(ctx.measureText(test).width>maxWidth && line){ lines.push(line); line=words[i]; } else line=test; } if(line) lines.push(line); return lines; },
+      _draw(){
+        const d=this.data,ctx=this.ctx; const dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));
+        ctx.font=`${d.fontSize*dpr}px "${this.data.fontFamily}"`; ctx.textBaseline='alphabetic'; ctx.fillStyle=d.color;
+        const padding=d.paddingPx*dpr, maxW=d.maxWidthPx*dpr;
+        const lines=[]; d.value.split('\n').forEach(p=>{ if(p===''){lines.push(''); return;} this._wrapLines(p,maxW).forEach(l=>lines.push(l)); });
+        const lh=d.fontSize*d.lineHeight*dpr; const textHeight=Math.max(lh,lines.length*lh);
+        const W=Math.max(4,Math.ceil(maxW+padding*2)), H=Math.max(4,Math.ceil(textHeight+padding*2));
+        if (this.canvas.width!==W||this.canvas.height!==H){ this.canvas.width=W; this.canvas.height=H; }
+        ctx.clearRect(0,0,W,H);
+        if (d.bg && d.bg!=='transparent'){ ctx.fillStyle=d.bg; ctx.fillRect(0,0,W,H); ctx.fillStyle=d.color; }
+        ctx.textAlign=d.align==='left'?'left':d.align==='right'?'right':'center';
+        const x=d.align==='left'?padding:d.align==='right'?(W-padding):(W/2);
+        let y=padding+(d.fontSize*dpr);
+        for(const line of lines){ ctx.fillText(line,x,y); y+=lh; }
+        this.texture.needsUpdate=true;
+        const aspect=H/W, planeW=d.width, planeH=d.width*aspect;
+        this.el.setAttribute('geometry',`primitive: plane; width:${planeW}; height:${planeH}`);
+      }
+    });
+
+    // ---------- tiny utils ----------
+    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+    function waitForEnded(mediaEl){ return new Promise(res=>{ const onEnd=()=>{ mediaEl.removeEventListener('ended',onEnd); res(); }; mediaEl.addEventListener('ended',onEnd); }); }
+    function fadeIn(el, ms=1000){ el.setAttribute('visible',true); el.setAttribute('material','opacity',0); el.setAttribute('animation__fadein',{property:'material.opacity',from:0,to:1,dur:ms,easing:'easeInOutQuad'}); }
+    function fadeOut(el, ms=1000){ const cur=(el.getAttribute('material')||{}).opacity||1; el.setAttribute('animation__fadeout',{property:'material.opacity',from:cur,to:0,dur:ms,easing:'easeInOutQuad'}); setTimeout(()=>el.setAttribute('visible',false),ms); }
+    function setButtonEnabled(btn, on){ btn.setAttribute('material','color', on? '#28a745' : '#666'); }
+    function setButtonInteractive(btn, on){ const cls=(btn.getAttribute('class')||''); const has=cls.split(/\s+/).includes('interactable'); if(on && !has) btn.setAttribute('class',(cls+' interactable').trim()); if(!on && has) btn.setAttribute('class',cls.replace(/\binteractable\b/,'').trim()); }
+
+    // ---------- preloader ----------
+    async function preloadAll() {
+      // 1) Ensure A-Frame scene + assets element is ready
+      const scene = document.querySelector('a-scene');
+      if (!scene.hasLoaded) await new Promise(r=>scene.addEventListener('loaded',r,{once:true}));
+      const assets = document.querySelector('#assets');
+      if (!assets.hasLoaded) await new Promise(r=>assets.addEventListener('loaded',r,{once:true}));
+
+      // 2) Explicitly load the font
+      try { if (document.fonts && document.fonts.load) { await document.fonts.load('16px "NotoDev"'); } } catch(e){}
+
+      // 3) Wait for each media to be ready enough
+      const imgIds = ['introBg','scene1','scene2'];
+      const vidIds = ['v1','v2','v3','v4'];
+      const audIds = ['intro','a1','a2','a3','a4','a5'];
+
+      await Promise.all(imgIds.map(id => new Promise(res=>{
+        const el=document.getElementById(id);
+        if (el.complete) return res();
+        el.addEventListener('load', ()=>res(), {once:true});
+        el.addEventListener('error', ()=>res(), {once:true});
+      })));
+
+      await Promise.all(vidIds.map(id => new Promise(res=>{
+        const v=document.getElementById(id);
+        if (v.readyState>=1) return res();
+        const done=()=>{ cleanup(); res(); };
+        const cleanup=()=>{ v.removeEventListener('loadedmetadata',done); v.removeEventListener('loadeddata',done); v.removeEventListener('canplay',done); v.removeEventListener('error',done); };
+        v.addEventListener('loadedmetadata',done,{once:true});
+        v.addEventListener('loadeddata',done,{once:true});
+        v.addEventListener('canplay',done,{once:true});
+        v.addEventListener('error',done,{once:true});
+      })));
+
+      await Promise.all(audIds.map(id => new Promise(res=>{
+        const a=document.getElementById(id);
+        // If metadata is there, that’s enough for duration + ended events
+        if (a.readyState>=1) return res();
+        const done=()=>{ cleanup(); res(); };
+        const cleanup=()=>{ a.removeEventListener('loadedmetadata',done); a.removeEventListener('canplaythrough',done); a.removeEventListener('error',done); };
+        a.addEventListener('loadedmetadata',done,{once:true});
+        a.addEventListener('canplaythrough',done,{once:true});
+        a.addEventListener('error',done,{once:true});
+      })));
+    }
+
+    // ---------- main boot ----------
+    async function boot() {
+      // Preload everything (white screen visible)
+      await preloadAll();
+
+      // Hide loader
+      document.getElementById('boot').style.display='none';
+
+      // Set up scene initial visuals
+      const bg = document.getElementById('bg');
+      const enterBtn = document.getElementById('enterBtn');
+      const waitText = document.getElementById('waitText');
+      const intro = document.getElementById('intro');
+
+      // Intro background + text
+      bg.setAttribute('material','shader: flat; side: back; src: #introBg');
+      waitText.setAttribute('visible', true);
+      setButtonEnabled(enterBtn, false);
+      setButtonInteractive(enterBtn, false);
+
+      // Try autoplay intro audio
+      let autoplayOK = true;
+      try { await intro.play(); }
+      catch(e){ autoplayOK = false; }
+
+      if (!autoplayOK) {
+        // Show tap-to-enable overlay
+        const gate = document.getElementById('gate');
+        gate.style.display='flex';
+        await new Promise(resolve=>{
+          document.getElementById('gateBtn').onclick = async () => {
+            try { await intro.play(); } catch(e){}
+            gate.style.display='none';
+            resolve();
           };
-          this.el.getObject3D('mesh') ? attach() : this.el.addEventListener('object3dset',e=>{if(e.detail.type==='mesh') attach();});
+        });
+      }
 
-          // Wait for global font (set by loader) or load locally if not set.
-          if (window.__notoFontReadyPromise) { await window.__notoFontReadyPromise; }
-          else { await this._loadFont(); }
+      // When intro completes: arm the button
+      intro.addEventListener('ended', () => {
+        try { intro.pause(); intro.muted = true; } catch(e){}
+        waitText.setAttribute('visible', false);
+        setButtonEnabled(enterBtn, true);
+        setButtonInteractive(enterBtn, true);
+        // now gaze/click works
+      }, { once:true });
 
-          this._draw();
-        },
-        async update(){ if(!this.fontReady && !window.__notoFontReadyPromise) await this._loadFont(); this._draw(); },
-        async _loadFont(){
-          if(this.fontReady) return;
-          try{
-            const face=new FontFace(this.data.fontFamily, `url("${this.data.fontUrl}")`, {style:'normal',weight:'400',display:'swap'});
-            const loaded=await face.load(); document.fonts.add(loaded);
-            if (document.fonts && document.fonts.ready) { await document.fonts.ready; }
-            this.fontReady=true;
-          }catch(e){ console.warn('Font load failed, using system fallback:',e); this.fontReady=true; }
-        },
-        _wrapLines(text,maxWidthPx){
-          const ctx=this.ctx, words=text.split(/\s+/), lines=[]; let line='';
-          for(let i=0;i<words.length;i++){ const test=line?(line+' '+words[i]):words[i];
-            if(ctx.measureText(test).width>maxWidthPx && line){ lines.push(line); line=words[i]; } else { line=test; }
-          }
-          if(line) lines.push(line); return lines;
-        },
-        _draw(){
-          const d=this.data, ctx=this.ctx, dpr=Math.max(1, Math.min(2, window.devicePixelRatio||1));
-          ctx.font=`${d.fontSize*dpr}px "${d.fontFamily}"`; ctx.textBaseline='alphabetic'; ctx.fillStyle=d.color;
-          const padding=d.paddingPx*dpr, maxW=d.maxWidthPx*dpr, lines=[];
-          d.value.split('\n').forEach(p=>{ if(p===''){lines.push(''); return;} this._wrapLines(p,maxW).forEach(l=>lines.push(l)); });
-          const lh=d.fontSize*d.lineHeight*dpr, textH=Math.max(lh, lines.length*lh);
-          const W=Math.max(4, Math.ceil(maxW+padding*2)), H=Math.max(4, Math.ceil(textH+padding*2));
-          if(this.canvas.width!==W || this.canvas.height!==H){ this.canvas.width=W; this.canvas.height=H; }
-          ctx.clearRect(0,0,W,H);
-          if(d.bg && d.bg!=='transparent'){ ctx.fillStyle=d.bg; ctx.fillRect(0,0,W,H); ctx.fillStyle=d.color; }
-          ctx.textAlign = d.align==='left'?'left': (d.align==='right'?'right':'center');
-          const x = d.align==='left'? padding : d.align==='right'? (W-padding) : (W/2);
-          let y = padding + (d.fontSize*dpr);
-          for(const line of lines){ ctx.fillText(line, x, y); y+=lh; }
-          this.texture.needsUpdate=true;
-          const aspect=H/W; this.el.setAttribute('geometry', `primitive: plane; width: ${d.width}; height: ${d.width*aspect}`);
-        }
+      // Interaction to proceed (click/tap)
+      const activate = () => {
+        // Only proceed if enabled (i.e., after intro ended)
+        const isEnabled = (enterBtn.getAttribute('class')||'').includes('interactable');
+        if (!isEnabled) return;
+        startScene1();
+        enterBtn.setAttribute('visible', false);
+      };
+      enterBtn.addEventListener('click', activate);
+      enterBtn.addEventListener('mousedown', activate);
+
+      // Switch cursor mode: desktop (mouse) vs VR (entity gaze)
+      const cursor = document.getElementById('cursor');
+      const sceneEl = document.querySelector('a-scene');
+      sceneEl.addEventListener('enter-vr', ()=>{
+        cursor.setAttribute('cursor','rayOrigin: entity; fuse: true; fuseTimeout: 2000');
       });
+      sceneEl.addEventListener('exit-vr', ()=>{
+        cursor.setAttribute('cursor','rayOrigin: mouse; fuse: false;');
+      });
+    }
 
-      // ---------- Utility helpers ----------
-      const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
-      function fadeIn(el, ms=1000){ el.setAttribute('visible', true); el.setAttribute('animation__fadein',{property:'material.opacity',from:0,to:1,dur:ms,easing:'easeInOutQuad'}); }
-      function fadeOut(el, ms=1000){ const current=(el.getAttribute('material')||{}).opacity||1; el.setAttribute('animation__fadeout',{property:'material.opacity',from:current,to:0,dur:ms,easing:'easeInOutQuad'}); setTimeout(()=>el.setAttribute('visible',false), ms); }
-      function setButtonEnabled(btn, enabled){ btn.setAttribute('material','color', enabled ? '#28a745' : '#666'); }
-      function setButtonInteractive(btn, on){ const cls=btn.getAttribute('class')||''; const has=cls.split(/\s+/).includes('interactable'); if(on && !has) btn.setAttribute('class',(cls+' interactable').trim()); if(!on && has) btn.setAttribute('class', cls.replace(/\binteractable\b/,'').trim()); }
+    // ---------- playback flow for scenes ----------
+    async function startScene1() {
+      const bg = document.getElementById('bg');
+      const thanksText = document.getElementById('thanksText');
+      const a1 = document.getElementById('a1');
+      const a2 = document.getElementById('a2');
+      const a3 = document.getElementById('a3');
+      const a4 = document.getElementById('a4');
+      const a5 = document.getElementById('a5');
+      const v1 = document.getElementById('v1');
+      const v2 = document.getElementById('v2');
+      const v3 = document.getElementById('v3');
+      const v4 = document.getElementById('v4');
+      const vp1 = document.getElementById('vp1');
+      const vp2 = document.getElementById('vp2');
+      const vp3 = document.getElementById('vp3');
+      const vp4 = document.getElementById('vp4');
+      const fadeCfg = { inMs: 1000, outMs: 1000, delayThumbMs: 2200 };
 
-      // ---------- Preloader: wait for assets + font, show progress ----------
-      async function preloadAll(){
-        const assetsEl = document.querySelector('#assets');
-        const loader = document.getElementById('loader');
-        const loaderText = document.getElementById('loaderText');
+      // Ensure intro is silenced
+      const intro = document.getElementById('intro');
+      try { intro.pause(); intro.muted = true; } catch(e){}
 
-        // Font Promise (global so canvas-text can reuse)
-        window.__notoFontReadyPromise = (async ()=>{
-          try{
-            const face=new FontFace('NotoDev', 'url("./assets/NotoSansDevanagari-Regular.ttf")', {style:'normal',weight:'400',display:'swap'});
-            const loaded=await face.load(); document.fonts.add(loaded);
-            if (document.fonts && document.fonts.ready) { await document.fonts.ready; }
-          }catch(e){ console.warn('Global font load failed (fallback will be used):', e); }
-        })();
+      bg.setAttribute('material','shader: flat; side: back; src: #scene1');
 
-        // Show loader
-        loader.setAttribute('visible', true);
+      await playSegment(a1, v1, vp1, fadeCfg);
+      await playSegment(a2, v2, vp2, fadeCfg);
+      await playSegment(a3, v3, vp3, fadeCfg);
+      await playSegment(a4, v4, vp4, fadeCfg);
 
-        // Track A-Frame asset progress if available
-        function updatePct(loaded, total){
-          const pct = total ? Math.round((loaded/total)*100) : 0;
-          loaderText.setAttribute('canvas-text', `value: लोड हो रहा है… ${pct}% ; width: 1.6; fontSize: 64; align: center;`);
-        }
-        updatePct(0, 1);
+      bg.setAttribute('material','shader: flat; side: back; src: #scene2');
+      thanksText.setAttribute('visible', true);
+      try { a5.play(); } catch(e){}
+    }
 
-        const assetsReady = new Promise((resolve)=>{
-          if (assetsEl.hasLoaded) { updatePct(1,1); resolve(); return; }
-          assetsEl.addEventListener('progress', (e)=>{ if(e && e.detail){ updatePct(e.detail.loaded||0, e.detail.total||1); }});
-          assetsEl.addEventListener('loaded', ()=>{ updatePct(1,1); resolve(); }, {once:true});
+    async function playSegment(audioEl, videoEl, videoSurface, fadeCfg) {
+      try {
+        try { videoEl.pause(); } catch(e){}
+        try { videoEl.currentTime = 0; } catch(e){}
+        // Prime video (muted) to get a frame for the thumbnail fade
+        await new Promise(resolve=>{
+          if (videoEl.readyState >= 2) return resolve();
+          const onReady=()=>{ cleanup(); resolve(); };
+          const cleanup=()=>{ videoEl.removeEventListener('loadeddata',onReady); videoEl.removeEventListener('canplay',onReady); videoEl.removeEventListener('loadedmetadata',onReady); };
+          videoEl.addEventListener('loadeddata',onReady,{once:true});
+          videoEl.addEventListener('canplay',onReady,{once:true});
+          videoEl.addEventListener('loadedmetadata',onReady,{once:true});
         });
 
-        // Wait for both: all assets + font file
-        await Promise.all([assetsReady, window.__notoFontReadyPromise]);
+        videoSurface.setAttribute('visible', true);
+        videoSurface.setAttribute('material','opacity',0);
+        try { videoEl.muted = true; await videoEl.play(); await sleep(80); videoEl.pause(); } catch(e){}
 
-        // Hide loader
-        loader.setAttribute('visible', false);
+        // Narration first, then fade-in thumbnail
+        await audioEl.play();
+        await sleep(fadeCfg.delayThumbMs);
+        fadeIn(videoSurface, fadeCfg.inMs);
+
+        // After narration, play the clip with audio
+        await waitForEnded(audioEl);
+        try { videoEl.muted = false; videoEl.volume = 1.0; } catch(e){}
+        try { await videoEl.play(); } catch(e){}
+        await waitForEnded(videoEl);
+
+        fadeOut(videoSurface, fadeCfg.outMs);
+        await sleep(fadeCfg.outMs + 50);
+        videoSurface.setAttribute('visible', false);
+      } catch(err) {
+        console.warn('playSegment error', err);
       }
+    }
 
-      // ---------- Scene boot (runs AFTER preload completes) ----------
-      function bootScene(){
-        const enterBtn = document.getElementById('enterBtn');
-        const waitText = document.getElementById('waitText');
-        const intro = document.getElementById('intro');
+    // ---------- start after scene element mounts ----------
+    window.addEventListener('load', ()=>{
+      const sceneEl = document.querySelector('a-scene');
+      if (sceneEl && sceneEl.hasLoaded) boot();
+      else if (sceneEl) sceneEl.addEventListener('loaded', boot, {once:true});
+      else boot();
+    });
+  </script>
+</head>
 
-        let enterArmed = false;
+<body>
+  <div id="versionTag">GH-ready v3.1</div>
 
-        // Start disabled: visible but not interactable
-        waitText.setAttribute('visible', true);
-        setButtonEnabled(enterBtn, false);
-        setButtonInteractive(enterBtn, false);
+  <!-- White loading screen -->
+  <div id="boot" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <div>Loading…</div>
+    <div style="opacity:.7; font-size:13px; margin-top:6px;">Preparing fonts, images, audio, and videos</div>
+  </div>
 
-        // Try autoplay (may be blocked)
-        intro.play().catch(()=>{});
+  <!-- Tap-to-enable-audio overlay (shown only if autoplay blocked) -->
+  <div id="gate">
+    <div>Tap to enable audio</div>
+    <button id="gateBtn" type="button">Start</button>
+  </div>
 
-        // Autoplay fallback hint
-        setTimeout(() => {
-          if (!enterArmed && intro.currentTime === 0) {
-            waitText.setAttribute('canvas-text',
-              'value: कृपया ऑडियो शुरू करने के लिए टैप/क्लिक करें.; width: 2.2; fontSize: 60; align: center;');
-            setButtonInteractive(enterBtn, true);
-            setButtonEnabled(enterBtn, true);
-          }
-        }, 1500);
+  <a-scene renderer="colorManagement: true; antialias: true" background="color: #000">
+    <a-assets id="assets" timeout="60000">
+      <!-- Images (IDs must match) -->
+      <img id="introBg" src="intro.png" />
+      <img id="scene1"  src="Scene_1.jpg" />
+      <img id="scene2"  src="Scene_2.jpg" />
 
-        intro.addEventListener('ended', () => {
-          try { intro.pause(); intro.muted = true; intro.currentTime = intro.duration || intro.currentTime; } catch(e){}
-          waitText.setAttribute('visible', false);
-          setButtonInteractive(enterBtn, true);
-          setButtonEnabled(enterBtn, true);
-          enterArmed = true;
-        }, { once: true });
-
-        intro.addEventListener('error', () => {
-          setButtonInteractive(enterBtn, true);
-          setButtonEnabled(enterBtn, true);
-          enterArmed = true;
-          waitText.setAttribute('canvas-text',
-            'value: ऑडियो लोड नहीं हुआ। आगे बढ़ें बटन दबाएँ.; width: 2.2; fontSize: 60; align: center; color: #FFCC00;');
-        }, { once: true });
-
-        const activate = () => {
-          if (!enterArmed) { if (intro.paused) { intro.play().catch(()=>{}); } return; }
-          startScene1();
-          enterBtn.setAttribute('visible', false);
-        };
-
-        enterBtn.addEventListener('click', activate);
-        enterBtn.addEventListener('mousedown', activate);
-      }
-
-      // ---------- Flow ----------
-      async function startScene1() {
-        const bg = document.getElementById('bg');
-        const thanksText = document.getElementById('thanksText');
-        const a1 = document.getElementById('a1');
-        const a2 = document.getElementById('a2');
-        const a3 = document.getElementById('a3');
-        const a4 = document.getElementById('a4');
-        const a5 = document.getElementById('a5');
-        const v1 = document.getElementById('v1');
-        const v2 = document.getElementById('v2');
-        const v3 = document.getElementById('v3');
-        const v4 = document.getElementById('v4');
-        const vp1 = document.getElementById('vp1');
-        const vp2 = document.getElementById('vp2');
-        const vp3 = document.getElementById('vp3');
-        const vp4 = document.getElementById('vp4');
-        const fadeCfg = { inMs: 1000, outMs: 1000, delayThumbMs: 2200 };
-
-        // Safety: silence/stop intro
-        const intro = document.getElementById('intro'); try { intro.pause(); intro.muted = true; } catch(e){}
-
-        bg.setAttribute('material', 'shader: flat; side: back; src: #scene1');
-
-        await playSegment(a1, v1, vp1, fadeCfg);
-        await playSegment(a2, v2, vp2, fadeCfg);
-        await playSegment(a3, v3, vp3, fadeCfg);
-        await playSegment(a4, v4, vp4, fadeCfg);
-
-        bg.setAttribute('material', 'shader: flat; side: back; src: #scene2');
-        thanksText.setAttribute('visible', true);
-        a5.play();
-      }
-
-      async function playSegment(audioEl, videoEl, videoSurface, fadeCfg) {
-        try {
-          try { videoEl.pause(); } catch(e){} try { videoEl.currentTime = 0; } catch(e){} try { videoEl.load(); } catch(e){}
-
-          await new Promise(resolve => {
-            if (videoEl.readyState >= 2) return resolve();
-            const onReady = () => { cleanup(); resolve(); };
-            const cleanup = () => {
-              videoEl.removeEventListener('loadeddata', onReady);
-              videoEl.removeEventListener('canplay', onReady);
-              videoEl.removeEventListener('loadedmetadata', onReady);
-            };
-            videoEl.addEventListener('loadeddata', onReady, { once: true });
-            videoEl.addEventListener('canplay', onReady, { once: true });
-            videoEl.addEventListener('loadedmetadata', onReady, { once: true });
-          });
-
-          videoSurface.setAttribute('visible', true);
-          videoSurface.setAttribute('material', 'opacity', 0);
-          try { videoEl.muted = true; await videoEl.play(); await sleep(80); videoEl.pause(); } catch(e){}
-
-          await audioEl.play();
-          await sleep(fadeCfg.delayThumbMs);
-          fadeIn(videoSurface, fadeCfg.inMs);
-
-          await new Promise(res => { audioEl.addEventListener('ended', res, {once:true}); });
-          try { videoEl.muted = false; videoEl.volume = 1.0; } catch(e){}
-          try { await videoEl.play(); } catch(e) { console.warn('Video play rejected', e); }
-          await new Promise(res => { videoEl.addEventListener('ended', res, {once:true}); });
-
-          fadeOut(videoSurface, fadeCfg.outMs);
-          await sleep(fadeCfg.outMs + 50);
-          videoSurface.setAttribute('visible', false);
-        } catch(err) { console.error('playSegment error', err); }
-      }
-
-      // ---------- Boot: wait for assets & font, then start UI logic ----------
-      (function(){
-        const sceneEl = document.querySelector('a-scene');
-        const start = async ()=>{ await preloadAll(); bootScene(); };
-        sceneEl ? (sceneEl.hasLoaded ? start() : sceneEl.addEventListener('loaded', start, {once:true})) : window.addEventListener('load', start, {once:true});
-      })();
-    </script>
-  </head>
-
-  <body>
-    <div id="versionTag">Code Version: v2.5-preloader</div>
-
-    <a-scene renderer="colorManagement: true; antialias: true" background="color: #000">
-      <a-assets id="assets" timeout="60000">
-        <!-- Images -->
-        <img id="introBg" src="./assets/intro.png" />
-        <img id="scene1"  src="./assets/Scene_1.jpg" />
-        <img id="scene2"  src="./assets/Scene_2.jpg" />
-
-        <!-- Audio -->
-        <audio id="intro" src="./assets/intro.mp3" preload="auto" autoplay="true"></audio>
-        <audio id="a1" src="./assets/Audio_1.mp3" preload="auto"></audio>
-        <audio id="a2" src="./assets/Audio_2.mp3" preload="auto"></audio>
-        <audio id="a3" src="./assets/Audio_3.mp3" preload="auto"></audio>
-        <audio id="a4" src="./assets/Audio_4.mp3" preload="auto"></audio>
-        <audio id="a5" src="./assets/Audio_5.mp3" preload="auto"></audio>
-
-        <!-- Videos -->
-        <video id="v1" src="./assets/Video_1.mp4" preload="auto" playsinline webkit-playsinline></video>
-        <video id="v2" src="./assets/Video_2.mp4" preload="auto" playsinline webkit-playsinline></video>
-        <video id="v3" src="./assets/Video_3.mp4" preload="auto" playsinline webkit-playsinline></video>
-        <video id="v4" src="./assets/Video_4.mp4" preload="auto" playsinline webkit-playsinline></video>
-      </a-assets>
-
-      <!-- Camera + cursors -->
-      <a-entity id="rig">
-        <a-entity id="camera" camera wasd-controls look-controls position="0 1.6 0">
-          <!-- Gaze cursor -->
-          <a-entity id="cursor"
-            cursor="rayOrigin: entity; fuse: true; fuseTimeout: 1200"
-            raycaster="objects: .interactable"
-            position="0 0 -1"
-            geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.015"
-            material="shader: flat; color: white; opacity: 0.9"></a-entity>
-          <!-- Mouse cursor (desktop) -->
-          <a-entity cursor="rayOrigin: mouse" raycaster="objects: .interactable" visible="false"></a-entity>
-        </a-entity>
-      </a-entity>
-
-      <!-- Background -->
-      <a-sky id="bg" radius="500" material="shader: flat; side: back; src: #introBg"></a-sky>
-
-      <!-- LOADER (shown until assets + font ready) -->
-      <a-entity id="loader" position="0 1.8 -1.5" visible="true" face-camera>
-        <a-entity id="loaderText" canvas-text="value: लोड हो रहा है… 0% ; width: 1.6; fontSize: 64; align: center; bg: rgba(0,0,0,0.35); paddingPx: 18;"></a-entity>
-      </a-entity>
-
-      <!-- Enter button (initially present but will be disabled until intro ends) -->
-      <a-plane id="enterBtn"
-               position="-1 1.3 -2" width="0.8" height="0.3"
-               material="color: #666; opacity: 1; shader: flat"
-               face-camera>
-        <a-entity position="0 0 0.01" face-camera
-                  canvas-text="value: आगे बढ़ें; width: 0.75; fontSize: 72; align: center;"></a-entity>
-      </a-plane>
-
-      <!-- Wait text -->
-      <a-entity id="waitText" position="-1 1.8 -2" visible="true" face-camera
-                canvas-text="value: कृपया ऑडियो पूरा होने तक प्रतीक्षा करें.; width: 2; fontSize: 60; align: center;"></a-entity>
+      <!-- Audio -->
+      <audio id="intro" src="intro.mp3" preload="auto"></audio>
+      <audio id="a1" src="Audio_1.mp3" preload="auto"></audio>
+      <audio id="a2" src="Audio_2.mp3" preload="auto"></audio>
+      <audio id="a3" src="Audio_3.mp3" preload="auto"></audio>
+      <audio id="a4" src="Audio_4.mp3" preload="auto"></audio>
+      <audio id="a5" src="Audio_5.mp3" preload="auto"></audio>
 
       <!-- Videos -->
-      <a-video id="vp1" position="-1.2 1.35 -2" width="3.6" height="2.025" src="#v1"
-               material="shader: flat; opacity: 0" visible="false" face-camera></a-video>
-      <a-video id="vp2" position="0.5 1.35 -2"  width="3.6" height="2.025" src="#v2"
-               material="shader: flat; opacity: 0" visible="false" face-camera></a-video>
-      <a-video id="vp3" position="1.9 1.15 -2.2" width="3.6" height="2.025"  src="#v3"
-               material="shader: flat; opacity: 0" visible="false" face-camera></a-video>
-      <a-video id="vp4" position="-2.0 1.1 -2.4" width="3.6" height="2.025"  src="#v4"
-               material="shader: flat; opacity: 0" visible="false" face-camera></a-video>
+      <video id="v1" src="Video_1.mp4" preload="auto" playsinline webkit-playsinline></video>
+      <video id="v2" src="Video_2.mp4" preload="auto" playsinline webkit-playsinline></video>
+      <video id="v3" src="Video_3.mp4" preload="auto" playsinline webkit-playsinline></video>
+      <video id="v4" src="Video_4.mp4" preload="auto" playsinline webkit-playsinline></video>
+    </a-assets>
 
-      <!-- Thanks text -->
-      <a-entity id="thanksText" position="0 1.8 -2" visible="false" face-camera
-                canvas-text="value: धन्यवाद; width: 2; fontSize: 72; align: center;"></a-entity>
-    </a-scene>
-  </body>
+    <!-- Rig + camera + adaptive cursor -->
+    <a-entity id="rig">
+      <a-entity id="camera" camera wasd-controls look-controls position="0 1.6 0">
+        <!-- Start with mouse for desktop; switch to gaze in VR -->
+        <a-entity id="cursor"
+                  cursor="rayOrigin: mouse; fuse: false"
+                  raycaster="objects: .interactable"
+                  position="0 0 -1"
+                  geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.015"
+                  material="shader: flat; color: white; opacity: 0.9"></a-entity>
+      </a-entity>
+    </a-entity>
+
+    <!-- Background -->
+    <a-sky id="bg" radius="500" material="shader: flat; side: back; src: #introBg"></a-sky>
+
+    <!-- Enter button (disabled initially) -->
+    <a-plane id="enterBtn"
+             position="-1 1.3 -2" width="0.6" height="0.25"
+             material="color: #666; opacity: 1; shader: flat"
+             face-camera>
+      <a-entity position="0 0 0.01" face-camera
+                canvas-text="value: आगे बढ़ें; width: 1.2; fontSize: 64; align: center;"></a-entity>
+    </a-plane>
+
+    <!-- Wait text -->
+    <a-entity id="waitText" position="-1 1.8 -2" visible="true" face-camera
+              canvas-text="value: कृपया ऑडियो पूरा होने तक प्रतीक्षा करें.; width: 1.8; fontSize: 60; align: center; color:#ffffff;"></a-entity>
+
+    <!-- Videos (hidden until used) -->
+    <a-video id="vp1" position="-1.2 1.35 -2" width="3.6" height="2.025" src="#v1"
+             material="shader: flat; opacity: 0" visible="false" face-camera></a-video>
+
+    <a-video id="vp2" position="0.5 1.35 -2"  width="3.6" height="2.025" src="#v2"
+             material="shader: flat; opacity: 0" visible="false" face-camera></a-video>
+
+    <a-video id="vp3" position="1.9 1.15 -2.2" width="3.6" height="2.025"  src="#v3"
+             material="shader: flat; opacity: 0" visible="false" face-camera></a-video>
+
+    <a-video id="vp4" position="-2.0 1.1 -2.4" width="3.6" height="2.025"  src="#v4"
+             material="shader: flat; opacity: 0" visible="false" face-camera></a-video>
+
+    <!-- Thanks -->
+    <a-entity id="thanksText" position="0 1.8 -2" visible="false" face-camera
+              canvas-text="value: धन्यवाद; width: 1.6; fontSize: 72; align: center; color: #8B4513;"></a-entity>
+  </a-scene>
+</body>
 </html>
