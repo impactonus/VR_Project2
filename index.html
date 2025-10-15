@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VR Flow (GH-ready v3.2)</title>
+  <title>VR Flow (GH-ready v3.3)</title>
   <link rel="icon" href="data:,">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <style>
@@ -73,7 +73,7 @@
       },
       update(){ this._ensureFont().then(()=>this._draw()); },
       _ensureFont(){ return (document.fonts&&document.fonts.load)?document.fonts.load(`16px "${this.data.fontFamily}"`).catch(()=>{}):Promise.resolve(); },
-      _wrapLines(t,max){ const ctx=this.ctx,w=t.split(/\s+/),o=[],lH=this.data.fontSize*this.data.lineHeight*(window.devicePixelRatio||1); let line=''; for(const word of w){ const test=line?line+' '+word:word; if(ctx.measureText(test).width>max && line){o.push(line); line=word;} else line=test; } if(line) o.push(line); return o; },
+      _wrapLines(t,max){ const ctx=this.ctx,w=t.split(/\s+/),o=[]; let line=''; for(const word of w){ const test=line?line+' '+word:word; if(ctx.measureText(test).width>max && line){o.push(line); line=word;} else line=test; } if(line) o.push(line); return o; },
       _draw(){
         const d=this.data,ctx=this.ctx,dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));
         ctx.font=`${d.fontSize*dpr}px "${d.fontFamily}"`; ctx.textBaseline='alphabetic'; ctx.fillStyle=d.color;
@@ -124,6 +124,9 @@
       const waitText=document.getElementById('waitText');
       const intro=document.getElementById('intro');
       const vrGate=document.getElementById('vrGate');
+      const camera=document.getElementById('camera');
+      const cursor=document.getElementById('cursor');
+      const sceneEl=document.querySelector('a-scene');
 
       bg.setAttribute('material','shader: flat; side: back; src:#introBg');
       waitText.setAttribute('visible', true);
@@ -141,49 +144,70 @@
         document.getElementById('gateBtn').onclick=async ()=>{ try{ await intro.play(); }catch(e){} gate.style.display='none'; };
       }
 
-      // When intro ends, arm the button for gaze/click
+      // When intro ends, arm the button
       intro.addEventListener('ended', ()=>{
         try{ intro.pause(); intro.muted=true; }catch(e){}
         waitText.setAttribute('visible', false);
         setButtonEnabled(enterBtn,true);
-        setButtonInteractive(enterBtn,true);  // <-- enables gaze
+        setButtonInteractive(enterBtn,true);  // enables gaze
       }, {once:true});
 
-      // Click/tap OR gaze-click handler
+      // Proceed handler (click / tap / gaze click)
       const proceed=()=>{
         const enabled=(enterBtn.getAttribute('class')||'').includes('interactable');
         if(!enabled) return;
+
+        // HARDEN: fully disable Enter button
+        setButtonInteractive(enterBtn,false);
+        enterBtn.removeEventListener('click', proceed);
+        enterBtn.removeEventListener('mousedown', proceed);
+        enterBtn.setAttribute('visible', false);
+
+        // HARDEN: shut down any VR audio gate remnants
+        vrGate.setAttribute('visible', false);
+        vrGate.setAttribute('class','');
+        // drop any lingering listeners
+        vrGate.replaceWith(vrGate.cloneNode(true));
+
+        // NEW: Disable all post-intro interactions
+        camera.setAttribute('raycaster','enabled:false');
+        cursor.setAttribute('cursor','enabled:false');
+        cursor.setAttribute('visible', false);
+
         startScene1();
-        enterBtn.setAttribute('visible',false);
       };
       enterBtn.addEventListener('click', proceed);
       enterBtn.addEventListener('mousedown', proceed);
 
-      // VR: if autoplay was blocked, show gaze-to-start hotspot
-      const sceneEl=document.querySelector('a-scene');
-      sceneEl.addEventListener('enter-vr', async ()=>{
-        const cursor=document.getElementById('cursor');
+      // VR mode: if autoplay blocked, show gaze-to-start hotspot
+      const startAudio=async ()=>{
+        vrGate.removeEventListener('click', startAudio);
+        vrGate.setAttribute('visible', false);
+        vrGate.setAttribute('class','');
+        try{ await intro.play(); }catch(e){}
+      };
+      sceneEl.addEventListener('enter-vr', ()=>{
         cursor.setAttribute('cursor','rayOrigin: entity; fuse: true; fuseTimeout: 2000');
+        camera.setAttribute('raycaster','objects: .interactable; far: 20; interval: 100; enabled:true');
         if(intro.paused){
           vrGate.setAttribute('visible', true);
           vrGate.setAttribute('class','interactable');
-          const startAudio=async ()=>{
-            vrGate.removeEventListener('click', startAudio);
-            vrGate.setAttribute('visible', false);
-            vrGate.setAttribute('class',''); // not interactable anymore
-            try{ await intro.play(); }catch(e){}
-          };
           vrGate.addEventListener('click', startAudio, {once:true});
         }
       });
-
       sceneEl.addEventListener('exit-vr', ()=>{
-        const cursor=document.getElementById('cursor');
         cursor.setAttribute('cursor','rayOrigin: mouse; fuse: false');
+        camera.setAttribute('raycaster','enabled:true');
       });
     }
 
     async function startScene1(){
+      // extra safety (ensure gate cannot be hit)
+      const vg=document.getElementById('vrGate');
+      vg.setAttribute('visible', false);
+      vg.setAttribute('class','');
+      vg.replaceWith(vg.cloneNode(true));
+
       const bg=document.getElementById('bg');
       const thanksText=document.getElementById('thanksText');
       const a1=document.getElementById('a1'), a2=document.getElementById('a2'), a3=document.getElementById('a3'), a4=document.getElementById('a4'), a5=document.getElementById('a5');
@@ -243,7 +267,7 @@
 </head>
 
 <body>
-  <div id="versionTag">GH-ready v3.2</div>
+  <div id="versionTag">GH-ready v3.3</div>
 
   <!-- Boot & desktop/mobile audio gate -->
   <div id="boot"><div class="spinner"></div><div>Loading…</div><div style="opacity:.7;font-size:13px;margin-top:6px;">Preparing fonts, images, audio, and videos</div></div>
@@ -268,15 +292,15 @@
       <video id="v4" src="Video_4.mp4" preload="auto" playsinline webkit-playsinline></video>
     </a-assets>
 
-    <!-- Rig + camera: put RAYCASTER ON CAMERA (reliable for gaze) -->
+    <!-- Rig + camera: raycaster on camera -->
     <a-entity id="rig">
       <a-entity id="camera"
                 camera
                 wasd-controls
                 look-controls
                 position="0 1.6 0"
-                raycaster="objects: .interactable; far: 20; interval: 100">
-        <!-- Visual cursor; switches to fuse in VR -->
+                raycaster="objects: .interactable; far: 20; interval: 100; enabled:true">
+        <!-- Visual cursor; switches to fuse in VR; gets disabled after proceed -->
         <a-entity id="cursor"
                   cursor="rayOrigin: mouse; fuse: false"
                   position="0 0 -1"
@@ -288,11 +312,11 @@
     <!-- 360 background -->
     <a-sky id="bg" radius="500" material="shader: flat; side: back; src: #introBg"></a-sky>
 
-    <!-- VR audio gate (gaze to start) -->
-    <a-plane id="vrGate" visible="false" position="0 1.6 -2" width="1.6" height="0.5"
+    <!-- VR audio gate (gaze to start if needed) -->
+    <a-plane id="vrGate" visible="false" position="0 1.6 -2" width="1.8" height="0.6"
              material="color:#111; shader: flat">
       <a-entity position="0 0 0.01" face-camera
-        canvas-text="value: नज़र रखें (2 सेकंड) शुरू करने के लिए; width: 1.5; fontSize: 58; align: center;"></a-entity>
+        canvas-text="value: नज़र रखें (2 सेकंड) शुरू करने के लिए; width: 1.7; fontSize: 58; align: center;"></a-entity>
     </a-plane>
 
     <!-- Enter button (disabled until intro ends) -->
